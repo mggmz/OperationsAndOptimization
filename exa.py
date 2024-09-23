@@ -151,15 +151,10 @@ class LinearProgrammingSolver:
         for i in range(num_constraints):
             row = A[i][:]
             slack = [0] * num_constraints
-            if signs[i] == "<=":
-                slack[i] = 1
-                c_extended.append(0)
-                basis.append(slack_var_index)
-                slack_var_index +=1
-            else:
-                # No se pueden manejar '>=' o '=' en el Método Simplex estándar
-                self.output_text.insert(tk.END, "El Método Simplex estándar no puede resolver restricciones '≥' o '='.\n")
-                return
+            slack[i] = 1
+            c_extended.append(0)
+            basis.append(slack_var_index)
+            slack_var_index +=1
             row.extend(slack)
             row.append(b[i])
             tableau.append(row)
@@ -181,15 +176,16 @@ class LinearProgrammingSolver:
                     zj[j] += c_extended[basis[i]] * tableau[i][j]
             cj_zj = [c_extended[j] - zj[j] for j in range(len(c_extended))]
             
-            self.output_text.insert(tk.END, f"Ganancias relativas (cj - zj): {['{0:.2f}'.format(num) for num in cj_zj]}\n")
+            # Mostrar el tableau con las ganancias relativas
+            self.display_tableau(tableau, c_extended, basis, cj_zj=cj_zj)
             
             # Verificar optimalidad
-            if all(value <= 1e-5 for value in cj_zj[:-1]):
+            if all(value <= 1e-5 for value in cj_zj):
                 self.output_text.insert(tk.END, "Se encontró la solución óptima.\n")
                 break
             
             # Variable entrante (mayor cj - zj)
-            entering_candidates = [j for j in range(len(cj_zj)-1) if cj_zj[j] > 1e-5]
+            entering_candidates = [j for j in range(len(cj_zj)) if cj_zj[j] > 1e-5]
             if not entering_candidates:
                 self.output_text.insert(tk.END, "No hay variables entrantes. El problema puede tener soluciones múltiples.\n")
                 break
@@ -203,7 +199,9 @@ class LinearProgrammingSolver:
                     ratios.append(tableau[i][-1] / tableau[i][entering])
                 else:
                     ratios.append(float('inf'))
-            self.output_text.insert(tk.END, f"Razones: {['{0:.2f}'.format(num) if num != float('inf') else 'Inf' for num in ratios]}\n")
+            
+            # Mostrar las razones en el tableau
+            self.display_tableau(tableau, c_extended, basis, ratios=ratios, entering=entering)
             
             # Verificar si es ilimitado
             if all(r == float('inf') for r in ratios):
@@ -225,9 +223,6 @@ class LinearProgrammingSolver:
             
             # Actualizar base
             basis[leaving] = entering
-            
-            # Mostrar tableau
-            self.display_tableau(tableau, c_extended, basis)
         else:
             self.output_text.insert(tk.END, "Se alcanzó el número máximo de iteraciones. El problema puede no tener solución óptima.\n")
             return
@@ -246,19 +241,66 @@ class LinearProgrammingSolver:
             self.output_text.insert(tk.END, f"x{i+1} = {solution[i]:.2f}\n")
         self.output_text.insert(tk.END, f"Z = {z:.2f}\n")
         
-    def display_tableau(self, tableau, c_extended, basis):
-        # Mostrar el tableau de forma formateada
-        header = "Base\t"
-        for j in range(len(c_extended)):
-            header += f"x{j+1}\t"
-        header += "LD\n"
-        self.output_text.insert(tk.END, header)
-        for i in range(len(tableau)):
-            row_str = f"x{basis[i]+1}\t"
-            for value in tableau[i]:
-                row_str += f"{value:.2f}\t"
-            self.output_text.insert(tk.END, row_str + "\n")
+    def display_tableau(self, tableau, c_extended, basis, cj_zj=None, ratios=None, entering=None):
+        num_vars = len(c_extended)
+        num_decision_vars = self.num_variables
+        num_slack_surplus_vars = num_vars - num_decision_vars
+        # Construir encabezados
+        header = "+------+"
+        header += "-----------" * num_decision_vars + "+"
+        header += "-----------" * num_slack_surplus_vars + "+"
+        header += "----------+\n"
         
+        title_row = "| Base |"
+        for i in range(num_decision_vars):
+            title_row += f"   X{i+1}   |"
+        for i in range(num_slack_surplus_vars):
+            title_row += f"   S{i+1}   |"
+        title_row += " Solución |\n"
+        
+        header += title_row
+        header += "+------+"
+        header += "-----------" * num_decision_vars + "+"
+        header += "-----------" * num_slack_surplus_vars + "+"
+        header += "----------+\n"
+        
+        self.output_text.insert(tk.END, header)
+        
+        # Mostrar filas del tableau
+        for i in range(len(tableau)):
+            row = tableau[i]
+            base_var = basis[i]
+            row_str = f"|  x{base_var+1:<3}|"
+            for val in row[:-1]:
+                row_str += f" {val:>8.2f} |"
+            row_str += f" {row[-1]:>8.2f} |"
+            # Añadir razón si corresponde
+            if ratios:
+                if ratios[i] != float('inf'):
+                    ratio_str = f"{row[-1]:.2f}/{row[entering]:.2f}={ratios[i]:.2f}"
+                else:
+                    ratio_str = "Inf"
+                row_str += f" {ratio_str} |"
+            row_str += "\n"
+            self.output_text.insert(tk.END, row_str)
+            self.output_text.insert(tk.END, "+------+")
+            self.output_text.insert(tk.END, "-----------" * num_decision_vars + "+")
+            self.output_text.insert(tk.END, "-----------" * num_slack_surplus_vars + "+")
+            self.output_text.insert(tk.END, "----------+\n")
+        
+        # Mostrar fila de Z
+        if cj_zj:
+            z_value = sum(c_extended[basis[i]] * tableau[i][-1] for i in range(len(basis)))
+            row_str = f"|  Z   |"
+            for val in cj_zj:
+                row_str += f" {val:>8.2f} |"
+            row_str += f" {z_value:>8.2f} |\n"
+            self.output_text.insert(tk.END, row_str)
+            self.output_text.insert(tk.END, "+------+")
+            self.output_text.insert(tk.END, "-----------" * num_decision_vars + "+")
+            self.output_text.insert(tk.END, "-----------" * num_slack_surplus_vars + "+")
+            self.output_text.insert(tk.END, "----------+\n")
+    
     def big_m_method(self, c, A, b, signs, var_constraints):
         self.output_text.delete(1.0, tk.END)
         
@@ -274,19 +316,20 @@ class LinearProgrammingSolver:
         
         for i in range(num_constraints):
             row = A[i][:]
-            slack = [0]*num_constraints
+            slack_surplus = [0]*num_constraints
             artificial = [0]*num_constraints
             if signs[i] == "<=":
                 # Agregar variable de holgura
-                slack[i] = 1
+                slack_surplus[i] = 1
                 c_extended.append(0)
                 basis.append(var_index)
                 var_index += 1
             elif signs[i] == ">=":
                 # Agregar variable de superávit y variable artificial
-                slack[i] = -1
+                slack_surplus[i] = -1
+                c_extended.append(0)
                 artificial[i] = 1
-                c_extended.extend([0, M])
+                c_extended.append(M)
                 artificial_vars.append(var_index + 1)
                 basis.append(var_index + 1)
                 var_index += 2
@@ -300,7 +343,7 @@ class LinearProgrammingSolver:
             else:
                 self.output_text.insert(tk.END, "Signo de restricción no reconocido.\n")
                 return
-            row.extend(slack)
+            row.extend(slack_surplus)
             row.extend(artificial)
             row.append(b[i])
             tableau.append(row)
@@ -309,11 +352,12 @@ class LinearProgrammingSolver:
         while len(c_extended) < len(tableau[0])-1:
             c_extended.append(0)
         
-        # Si es minimización, cambiar signo de M
-        if self.optimization_type.get() == "Minimizar":
-            c_extended = [coeff if i not in artificial_vars else coeff - M for i, coeff in enumerate(c_extended)]
-        else:
-            c_extended = [coeff if i not in artificial_vars else coeff + M for i, coeff in enumerate(c_extended)]
+        # Ajustar los coeficientes de la función objetivo para las variables artificiales
+        for idx in artificial_vars:
+            if self.optimization_type.get() == "Minimizar":
+                c_extended[idx] = -M
+            else:
+                c_extended[idx] = -M  # Cambiar a -M para maximizar
         
         # Mostrar el tableau inicial
         self.output_text.insert(tk.END, "Tableau Inicial (Método de la M Grande):\n")
@@ -333,7 +377,8 @@ class LinearProgrammingSolver:
                     zj[j] += c_extended[basis[i]] * tableau[i][j]
             cj_zj = [c_extended[j] - zj[j] for j in range(len(zj))]
             
-            self.output_text.insert(tk.END, f"Ganancias relativas (cj - zj): {['{0:.2f}'.format(num) for num in cj_zj]}\n")
+            # Mostrar el tableau con las ganancias relativas
+            self.display_tableau(tableau, c_extended, basis, cj_zj=cj_zj)
             
             # Verificar optimalidad
             if all(value <= 1e-5 for value in cj_zj):
@@ -345,7 +390,7 @@ class LinearProgrammingSolver:
             if not entering_candidates:
                 self.output_text.insert(tk.END, "No hay variables entrantes. El problema puede tener soluciones múltiples.\n")
                 break
-            entering = max(entering_candidates, key=lambda j: cj_zj[j])
+            entering = entering_candidates[0]  # Puede usarse alguna estrategia
             self.output_text.insert(tk.END, f"Variable entrante: x{entering+1}\n")
             
             # Calcular razones
@@ -355,7 +400,9 @@ class LinearProgrammingSolver:
                     ratios.append(tableau[i][-1] / tableau[i][entering])
                 else:
                     ratios.append(float('inf'))
-            self.output_text.insert(tk.END, f"Razones: {['{0:.2f}'.format(num) if num != float('inf') else 'Inf' for num in ratios]}\n")
+            
+            # Mostrar las razones en el tableau
+            self.display_tableau(tableau, c_extended, basis, ratios=ratios, entering=entering)
             
             # Verificar ilimitado
             if all(r == float('inf') for r in ratios):
@@ -377,9 +424,6 @@ class LinearProgrammingSolver:
             
             # Actualizar base
             basis[leaving] = entering
-            
-            # Mostrar tableau
-            self.display_tableau(tableau, c_extended, basis)
         else:
             self.output_text.insert(tk.END, "Se alcanzó el número máximo de iteraciones.\n")
             return
@@ -418,17 +462,18 @@ class LinearProgrammingSolver:
         c_phase1 = [0]*(num_variables)
         for i in range(num_constraints):
             row = A[i][:]
-            slack = [0]*num_constraints
+            slack_surplus = [0]*num_constraints
             artificial = [0]*num_constraints
             if signs[i] == "<=":
-                slack[i] = 1
+                slack_surplus[i] = 1
                 c_phase1.append(0)
                 basis.append(var_index)
                 var_index += 1
             elif signs[i] == ">=":
-                slack[i] = -1
+                slack_surplus[i] = -1
+                c_phase1.append(0)
                 artificial[i] = 1
-                c_phase1.extend([0, 1])
+                c_phase1.append(1)
                 artificial_vars.append(var_index + 1)
                 basis.append(var_index + 1)
                 var_index += 2
@@ -441,7 +486,7 @@ class LinearProgrammingSolver:
             else:
                 self.output_text.insert(tk.END, "Signo de restricción no reconocido.\n")
                 return
-            row.extend(slack)
+            row.extend(slack_surplus)
             row.extend(artificial)
             row.append(b[i])
             tableau.append(row)
@@ -468,7 +513,8 @@ class LinearProgrammingSolver:
                     zj[j] += c_phase1[basis[i]] * tableau[i][j]
             cj_zj = [c_phase1[j] - zj[j] for j in range(len(zj))]
             
-            self.output_text.insert(tk.END, f"Ganancias relativas (cj - zj): {['{0:.2f}'.format(num) for num in cj_zj]}\n")
+            # Mostrar el tableau con las ganancias relativas
+            self.display_tableau(tableau, c_phase1, basis, cj_zj=cj_zj)
             
             # Verificar optimalidad
             if all(value >= -1e-5 for value in cj_zj):
@@ -480,7 +526,7 @@ class LinearProgrammingSolver:
             if not entering_candidates:
                 self.output_text.insert(tk.END, "No hay variables entrantes en Fase 1.\n")
                 break
-            entering = min(entering_candidates, key=lambda j: cj_zj[j])
+            entering = entering_candidates[0]
             self.output_text.insert(tk.END, f"Variable entrante: x{entering+1}\n")
             
             # Calcular razones
@@ -490,7 +536,9 @@ class LinearProgrammingSolver:
                     ratios.append(tableau[i][-1] / tableau[i][entering])
                 else:
                     ratios.append(float('inf'))
-            self.output_text.insert(tk.END, f"Razones: {['{0:.2f}'.format(num) if num != float('inf') else 'Inf' for num in ratios]}\n")
+            
+            # Mostrar las razones en el tableau
+            self.display_tableau(tableau, c_phase1, basis, ratios=ratios, entering=entering)
             
             # Verificar ilimitado
             if all(r == float('inf') for r in ratios):
@@ -512,9 +560,6 @@ class LinearProgrammingSolver:
             
             # Actualizar base
             basis[leaving] = entering
-            
-            # Mostrar tableau
-            self.display_tableau(tableau, c_phase1, basis)
         else:
             self.output_text.insert(tk.END, "Se alcanzó el número máximo de iteraciones en Fase 1.\n")
             return
@@ -556,7 +601,8 @@ class LinearProgrammingSolver:
                     zj[j] += c_extended[basis[i]] * tableau[i][j]
             cj_zj = [c_extended[j] - zj[j] for j in range(len(zj))]
             
-            self.output_text.insert(tk.END, f"Ganancias relativas (cj - zj): {['{0:.2f}'.format(num) for num in cj_zj]}\n")
+            # Mostrar el tableau con las ganancias relativas
+            self.display_tableau(tableau, c_extended, basis, cj_zj=cj_zj)
             
             # Verificar optimalidad
             if all(value <= 1e-5 for value in cj_zj):
@@ -568,7 +614,7 @@ class LinearProgrammingSolver:
             if not entering_candidates:
                 self.output_text.insert(tk.END, "No hay variables entrantes. El problema puede tener soluciones múltiples.\n")
                 break
-            entering = max(entering_candidates, key=lambda j: cj_zj[j])
+            entering = entering_candidates[0]
             self.output_text.insert(tk.END, f"Variable entrante: x{entering+1}\n")
             
             # Calcular razones
@@ -578,7 +624,9 @@ class LinearProgrammingSolver:
                     ratios.append(tableau[i][-1] / tableau[i][entering])
                 else:
                     ratios.append(float('inf'))
-            self.output_text.insert(tk.END, f"Razones: {['{0:.2f}'.format(num) if num != float('inf') else 'Inf' for num in ratios]}\n")
+            
+            # Mostrar las razones en el tableau
+            self.display_tableau(tableau, c_extended, basis, ratios=ratios, entering=entering)
             
             # Verificar ilimitado
             if all(r == float('inf') for r in ratios):
@@ -600,9 +648,6 @@ class LinearProgrammingSolver:
             
             # Actualizar base
             basis[leaving] = entering
-            
-            # Mostrar tableau
-            self.display_tableau(tableau, c_extended, basis)
         else:
             self.output_text.insert(tk.END, "Se alcanzó el número máximo de iteraciones en Fase 2.\n")
             return
@@ -619,7 +664,7 @@ class LinearProgrammingSolver:
         for i in range(num_variables):
             self.output_text.insert(tk.END, f"x{i+1} = {solution[i]:.2f}\n")
         self.output_text.insert(tk.END, f"Z = {z:.2f}\n")
-
+    
 if __name__ == "__main__":
     root = tk.Tk()
     app = LinearProgrammingSolver(root)
