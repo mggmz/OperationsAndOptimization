@@ -160,7 +160,7 @@ class LinearProgrammingSolver:
             tableau.append(row)
         
         # Mostrar el tableau inicial
-        self.output_text.insert(tk.END, "Tableau Inicial:\n")
+        self.output_text.insert(tk.END, "Tabla Inicial:\n")
         self.display_tableau(tableau, c_extended, basis)
         
         # Iniciar iteraciones
@@ -360,7 +360,7 @@ class LinearProgrammingSolver:
                 c_extended[idx] = -M  # Cambiar a -M para maximizar
         
         # Mostrar el tableau inicial
-        self.output_text.insert(tk.END, "Tableau Inicial (Método de la M Grande):\n")
+        self.output_text.insert(tk.END, "Tabla Inicial (Método de la M Grande):\n")
         self.display_tableau(tableau, c_extended, basis)
         
         # Iniciar iteraciones
@@ -496,7 +496,7 @@ class LinearProgrammingSolver:
             c_phase1.append(0)
         
         # Mostrar el tableau inicial de la Fase 1
-        self.output_text.insert(tk.END, "Fase 1: Tableau Inicial\n")
+        self.output_text.insert(tk.END, "Fase 1: Tabla Inicial\n")
         self.display_tableau(tableau, c_phase1, basis)
         
         # Iniciar iteraciones de la Fase 1
